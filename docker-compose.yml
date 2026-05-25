@@ -1,0 +1,20 @@
+# Default: host networking so WebRTC UDP candidates the browser can reach.
+# Requires Docker Desktop 4.34+ on Windows/macOS with host networking enabled
+# (Settings → Resources → Network → "Enable host networking").
+#
+# If host networking is unavailable, use the fallback override:
+#   docker compose -f docker-compose.yml -f docker-compose.ports.yml up --build
+# Note: media may still fail to connect because ICE host candidates from
+# inside the container are not reachable from the host browser.
+
+services:
+  bot:
+    build: .
+    network_mode: host
+    env_file: .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=7860
+    volumes:
+      - ./:/app
+    restart: unless-stopped

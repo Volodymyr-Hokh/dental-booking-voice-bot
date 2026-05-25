@@ -1,0 +1,13 @@
+# Fallback override: use bridge networking + port mapping instead of host
+# networking. Apply with:
+#   docker compose -f docker-compose.yml -f docker-compose.ports.yml up --build
+#
+# WebRTC media may not connect because the container's ICE host candidates
+# (Docker-internal IPs) are not reachable from the host browser. Use this only
+# if host networking is unavailable.
+
+services:
+  bot:
+    network_mode: bridge
+    ports:
+      - "7860:7860"
