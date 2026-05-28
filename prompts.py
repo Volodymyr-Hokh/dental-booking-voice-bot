@@ -1,18 +1,19 @@
 """System prompt for the dental receptionist voice agent."""
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from clinic_info import (
     CLINIC_NAME,
+    CLINIC_TZ,
     PHONE_DISPLAY,
-    TIMEZONE,
+    TIMEZONE_LABEL,
     format_hours_for_prompt,
     format_services_for_prompt,
 )
 
 
 def build_system_prompt() -> str:
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d (%A)")
+    today = datetime.now(CLINIC_TZ).strftime("%Y-%m-%d (%A)")
     return f"""You are the friendly virtual receptionist for {CLINIC_NAME}.
 
 You are speaking to a caller over the phone. Your output is converted to speech, so:
@@ -49,7 +50,7 @@ You are speaking to a caller over the phone. Your output is converted to speech,
 7. Confirm verbally once booked.
 
 # Time conventions
-- All times are in {TIMEZONE}. Mention the timezone if asked.
+- All times are in {TIMEZONE_LABEL}. Mention the timezone if asked.
 - If the caller says a relative date ("tomorrow", "next Tuesday"), resolve it to an absolute YYYY-MM-DD before calling tools.
 
 # Clinic reference (cached for short answers without a tool call)

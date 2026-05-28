@@ -1,6 +1,7 @@
 """Placeholder clinic data — edit these constants to match a real clinic."""
 
 from datetime import time
+from zoneinfo import ZoneInfo
 
 CLINIC_NAME = "Bright Smile Dental"
 ADDRESS = "123 Elm Street, Suite 4, Springfield"
@@ -16,7 +17,9 @@ WORKING_HOURS: dict[int, tuple[time, time]] = {
 }
 
 SLOT_MINUTES = 30
-TIMEZONE = "UTC"
+TIMEZONE = "Europe/Kyiv"
+TIMEZONE_LABEL = "Kyiv time"
+CLINIC_TZ = ZoneInfo(TIMEZONE)
 
 SERVICES: list[dict] = [
     {
@@ -69,7 +72,7 @@ def format_hours_for_prompt() -> str:
     for i, d in enumerate(days):
         if i in WORKING_HOURS:
             start, end = WORKING_HOURS[i]
-            lines.append(f"- {d}: {start.strftime('%H:%M')}–{end.strftime('%H:%M')} {TIMEZONE}")
+            lines.append(f"- {d}: {start.strftime('%H:%M')}–{end.strftime('%H:%M')} {TIMEZONE_LABEL}")
         else:
             lines.append(f"- {d}: closed")
     return "\n".join(lines)
@@ -78,7 +81,7 @@ def format_hours_for_prompt() -> str:
 def get_info(topic: str) -> str:
     topic = topic.lower().strip()
     if topic == "hours":
-        return f"Working hours ({TIMEZONE}):\n{format_hours_for_prompt()}"
+        return f"Working hours ({TIMEZONE_LABEL}):\n{format_hours_for_prompt()}"
     if topic == "address":
         return f"{CLINIC_NAME} is located at {ADDRESS}."
     if topic in ("services", "prices"):
@@ -86,6 +89,6 @@ def get_info(topic: str) -> str:
     if topic == "general":
         return (
             f"{CLINIC_NAME} — {ADDRESS}. Phone: {PHONE_DISPLAY}. "
-            f"All times in {TIMEZONE}."
+            f"All times in {TIMEZONE_LABEL}."
         )
     return f"No information for topic '{topic}'."

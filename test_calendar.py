@@ -7,9 +7,11 @@ Run inside Docker:
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
 from dotenv import load_dotenv
+
+from clinic_info import CLINIC_TZ
 
 load_dotenv()
 
@@ -41,10 +43,10 @@ except Exception as e:
     raise SystemExit(1)
 
 # ── 2. Write (create + immediately delete a test event) ─────────────────────
-test_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 23, 0, tzinfo=timezone.utc)
+test_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 23, 0, tzinfo=CLINIC_TZ)
 try:
     created = svc.create_event(
-        start_utc=test_start,
+        start_dt=test_start,
         duration_min=30,
         patient_name="TEST PATIENT - PLEASE DELETE",
         reason="calendar write access diagnostic",

@@ -8,9 +8,12 @@ ENV PYTHONUNBUFFERED=1 \
 # ffmpeg is occasionally used by pipecat helpers (audio resampling, etc.).
 # aiortc's manylinux wheels bundle libsrtp/libopus/libvpx, so no need to
 # install those system-side.
+# tzdata provides the system zone database that Python's zoneinfo reads
+# (slim images ship without it, so ZoneInfo("Europe/Kyiv") would fail).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         ca-certificates \
+        tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

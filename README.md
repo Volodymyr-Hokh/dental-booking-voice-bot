@@ -115,7 +115,7 @@ Open <http://localhost:7860>.
 - **Voice**: change `ELEVENLABS_VOICE_ID` (browse at <https://elevenlabs.io/voice-library>).
 - **Working hours / services / prices**: edit constants in [clinic_info.py](clinic_info.py).
 - **Slot length**: `SLOT_MINUTES` in [clinic_info.py](clinic_info.py) (currently fixed at 30 across the codebase).
-- **Timezone**: currently UTC. To switch, update `TIMEZONE` in [clinic_info.py](clinic_info.py), build the prompt accordingly, and adjust `CalendarService` to accept local times.
+- **Timezone**: currently `Europe/Kyiv`. All working hours, availability, and bookings are interpreted in this zone (DST handled automatically via `zoneinfo`). To switch, update `TIMEZONE` / `TIMEZONE_LABEL` in [clinic_info.py](clinic_info.py); everything else reads from `CLINIC_TZ`.
 
 ## Next steps (not in this version)
 

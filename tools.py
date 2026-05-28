@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time
 
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
@@ -12,6 +12,7 @@ from pipecat.services.llm_service import FunctionCallParams
 
 import clinic_info
 from calendar_service import CalendarService
+from clinic_info import CLINIC_TZ, TIMEZONE
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +29,12 @@ CHECK_AVAILABILITY_SCHEMA = FunctionSchema(
     properties={
         "date": {
             "type": "string",
-            "description": "Date in YYYY-MM-DD format (UTC).",
+            "description": "Date in YYYY-MM-DD format (Kyiv time).",
         },
         "preferred_time": {
             "type": "string",
             "description": (
-                "Optional preferred time HH:MM (24-hour, UTC). "
+                "Optional preferred time HH:MM (24-hour, Kyiv time). "
                 "If provided, results are sorted by proximity to this time."
             ),
         },
@@ -48,8 +49,8 @@ BOOK_APPOINTMENT_SCHEMA = FunctionSchema(
         "date, and time. Only call this once the caller has explicitly agreed."
     ),
     properties={
-        "date": {"type": "string", "description": "Date in YYYY-MM-DD format (UTC)."},
-        "time": {"type": "string", "description": "Time in HH:MM (24-hour, UTC)."},
+        "date": {"type": "string", "description": "Date in YYYY-MM-DD format (Kyiv time)."},
+        "time": {"type": "string", "description": "Time in HH:MM (24-hour, Kyiv time)."},
         "patient_name": {"type": "string", "description": "Patient's full name."},
         "reason": {
             "type": "string",
@@ -136,7 +137,7 @@ def make_handlers(calendar: CalendarService) -> dict:
 
         formatted = [s.strftime("%H:%M") for s in slots[:MAX_SLOTS_RETURNED]]
         await params.result_callback(
-            {"date": d.isoformat(), "timezone": "UTC", "free_slots": formatted}
+            {"date": d.isoformat(), "timezone": TIMEZONE, "free_slots": formatted}
         )
 
     async def book_appointment(params: FunctionCallParams) -> None:
@@ -152,7 +153,7 @@ def make_handlers(calendar: CalendarService) -> dict:
             )
             return
 
-        start_utc = datetime.combine(d, t, tzinfo=timezone.utc)
+        start_dt = datetime.combine(d, t, tzinfo=CLINIC_TZ)
         duration = clinic_info.SLOT_MINUTES
 
         await params.llm.push_frame(
@@ -160,7 +161,7 @@ def make_handlers(calendar: CalendarService) -> dict:
         )
 
         try:
-            if not calendar.is_slot_free(start_utc, duration):
+            if not calendar.is_slot_free(start_dt, duration):
                 # Offer alternatives the same day.
                 alternatives = [
                     s.strftime("%H:%M") for s in calendar.find_free_slots(d)[:MAX_SLOTS_RETURNED]
@@ -171,7 +172,7 @@ def make_handlers(calendar: CalendarService) -> dict:
                     "alternatives": alternatives,
                 })
                 return
-            created = calendar.create_event(start_utc, duration, name, reason)
+            created = calendar.create_event(start_dt, duration, name, reason)
         except Exception as e:
             logger.exception("book_appointment failed")
             await params.result_callback({"status": "error", "error": str(e)})

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-from clinic_info import SLOT_MINUTES, WORKING_HOURS
+from clinic_info import CLINIC_TZ, SLOT_MINUTES, TIMEZONE, WORKING_HOURS
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,8 @@ class CalendarService:
         if hours is None:
             return None
         start_t, end_t = hours
-        start = datetime.combine(d, start_t, tzinfo=timezone.utc)
-        end = datetime.combine(d, end_t, tzinfo=timezone.utc)
+        start = datetime.combine(d, start_t, tzinfo=CLINIC_TZ)
+        end = datetime.combine(d, end_t, tzinfo=CLINIC_TZ)
         return start, end
 
     def find_free_slots(
@@ -41,7 +41,7 @@ class CalendarService:
         start, end = window
 
         # Don't propose slots in the past.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(CLINIC_TZ)
         if start < now:
             # Round up to next slot boundary.
             delta = (now - start).total_seconds()
@@ -75,11 +75,11 @@ class CalendarService:
             slot = slot_end
         return free
 
-    def is_slot_free(self, start_utc: datetime, duration_min: int) -> bool:
-        end_utc = start_utc + timedelta(minutes=duration_min)
+    def is_slot_free(self, start_dt: datetime, duration_min: int) -> bool:
+        end_dt = start_dt + timedelta(minutes=duration_min)
         body = {
-            "timeMin": start_utc.isoformat(),
-            "timeMax": end_utc.isoformat(),
+            "timeMin": start_dt.isoformat(),
+            "timeMax": end_dt.isoformat(),
             "items": [{"id": self.calendar_id}],
         }
         resp = self._svc.freebusy().query(body=body).execute()
@@ -88,25 +88,25 @@ class CalendarService:
 
     def create_event(
         self,
-        start_utc: datetime,
+        start_dt: datetime,
         duration_min: int,
         patient_name: str,
         reason: str,
     ) -> dict:
-        end_utc = start_utc + timedelta(minutes=duration_min)
+        end_dt = start_dt + timedelta(minutes=duration_min)
         event = {
             "summary": f"Appointment: {patient_name}",
             "description": f"Reason: {reason}",
-            "start": {"dateTime": start_utc.isoformat(), "timeZone": "UTC"},
-            "end": {"dateTime": end_utc.isoformat(), "timeZone": "UTC"},
+            "start": {"dateTime": start_dt.isoformat(), "timeZone": TIMEZONE},
+            "end": {"dateTime": end_dt.isoformat(), "timeZone": TIMEZONE},
         }
         created = self._svc.events().insert(
             calendarId=self.calendar_id, body=event
         ).execute()
-        logger.info("Created event %s for %s at %s", created["id"], patient_name, start_utc)
+        logger.info("Created event %s for %s at %s", created["id"], patient_name, start_dt)
         return {
             "event_id": created["id"],
             "html_link": created.get("htmlLink"),
-            "start": start_utc.isoformat(),
-            "end": end_utc.isoformat(),
+            "start": start_dt.isoformat(),
+            "end": end_dt.isoformat(),
         }
