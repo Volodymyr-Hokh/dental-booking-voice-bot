@@ -2,25 +2,24 @@
 
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import uvicorn
-from fastapi import BackgroundTasks, FastAPI
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-
 from config import STUN_SERVER, settings
-from bot import run_bot
+from logging_config import setup_logging
 
-logging.basicConfig(
-    level=settings.log_level,
-    format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Configure logging before importing pipecat-heavy modules so their loguru
+# output (and the import-time banner) flows through our single configured sink.
+setup_logging()
 
+import uvicorn  # noqa: E402
+from fastapi import BackgroundTasks, FastAPI  # noqa: E402
+from fastapi.responses import FileResponse  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+from loguru import logger  # noqa: E402
+from pydantic import BaseModel  # noqa: E402
+
+from bot import run_bot  # noqa: E402
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection  # noqa: E402
 
 # Active connections keyed by pc_id (used for reconnect/renegotiation).
@@ -65,7 +64,7 @@ async def offer(payload: OfferRequest, background_tasks: BackgroundTasks):
 
     if pc_id and pc_id in _connections:
         conn = _connections[pc_id]
-        logger.info("Renegotiating connection %s", pc_id)
+        logger.info("Renegotiating connection {}", pc_id)
         await conn.renegotiate(sdp=payload.sdp, type=payload.type, restart_pc=payload.restart_pc)
     else:
         conn = SmallWebRTCConnection(ice_servers=[STUN_SERVER])
@@ -73,7 +72,7 @@ async def offer(payload: OfferRequest, background_tasks: BackgroundTasks):
 
         @conn.event_handler("closed")
         async def _closed(c: SmallWebRTCConnection):
-            logger.info("Connection %s closed", c.pc_id)
+            logger.info("Connection {} closed", c.pc_id)
             _connections.pop(c.pc_id, None)
 
         _connections[conn.pc_id] = conn

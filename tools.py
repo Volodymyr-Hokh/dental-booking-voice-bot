@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import date, datetime, time
 
+from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.frames.frames import TTSSpeakFrame
@@ -13,8 +13,6 @@ from pipecat.services.llm_service import FunctionCallParams
 import clinic_info
 from calendar_service import CalendarService
 from clinic_info import CLINIC_TZ, TIMEZONE
-
-logger = logging.getLogger(__name__)
 
 # Maximum slots to return per check_availability call — keeps spoken responses short.
 MAX_SLOTS_RETURNED = 6
@@ -112,6 +110,8 @@ def make_handlers(calendar: CalendarService) -> dict:
             )
             return
 
+        logger.debug("check_availability date={} preferred_time={}", args.get("date"), args.get("preferred_time"))
+
         await params.llm.push_frame(
             TTSSpeakFrame("One moment — let me check what's open on that day.", append_to_context=False)
         )
@@ -183,6 +183,10 @@ def make_handlers(calendar: CalendarService) -> dict:
             await params.result_callback({"status": "error", "error": str(e)})
             return
 
+        logger.info(
+            "Booked appointment {} for {} ({}) at {}",
+            created["event_id"], name, reason, start_dt.isoformat(),
+        )
         await params.result_callback({
             "status": "booked",
             "confirmation_id": created["event_id"],

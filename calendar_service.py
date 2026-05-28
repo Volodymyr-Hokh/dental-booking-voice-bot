@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import date, datetime, timedelta
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+from loguru import logger
 
 from clinic_info import CLINIC_TZ, SLOT_MINUTES, TIMEZONE, WORKING_HOURS
-
-logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
@@ -119,7 +117,7 @@ class CalendarService:
         created = self._svc.events().insert(
             calendarId=self.calendar_id, body=event
         ).execute()
-        logger.info("Created event %s for %s at %s", created["id"], patient_name, start_dt)
+        logger.info("Created event {} for {} at {}", created["id"], patient_name, start_dt)
         return {
             "event_id": created["id"],
             "html_link": created.get("htmlLink"),

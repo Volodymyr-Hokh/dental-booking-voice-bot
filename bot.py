@@ -2,24 +2,28 @@
 
 from __future__ import annotations
 
-import logging
+import json
 import struct
 import time
+from datetime import datetime
+from pathlib import Path
 
 import aiohttp
+from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
     Frame,
     InputAudioRawFrame,
     LLMRunFrame,
-    TranscriptionFrame,
-    UserStartedSpeakingFrame,
-    UserStoppedSpeakingFrame,
-    VADUserStartedSpeakingFrame,
-    VADUserStoppedSpeakingFrame,
 )
-from pipecat.observers.loggers.debug_log_observer import DebugLogObserver
+from pipecat.observers.loggers.llm_log_observer import LLMLogObserver
+from pipecat.observers.loggers.metrics_log_observer import MetricsLogObserver
+from pipecat.observers.loggers.transcription_log_observer import TranscriptionLogObserver
+from pipecat.observers.user_bot_latency_observer import (
+    LatencyBreakdown,
+    UserBotLatencyObserver,
+)
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.pipeline.runner import PipelineRunner
@@ -39,11 +43,89 @@ from pipecat.turns.user_stop import SpeechTimeoutUserTurnStopStrategy
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 from calendar_service import CalendarService
+from clinic_info import CLINIC_TZ
 from config import settings
 from prompts import build_system_prompt
 from tools import TOOLS_SCHEMA, make_handlers
 
-logger = logging.getLogger(__name__)
+
+def _short_id(pc_id: str | None) -> str:
+    """Short, readable session tag derived from the WebRTC connection id."""
+    return (pc_id or "unknown").replace("-", "")[:8]
+
+
+def _format_turn(breakdown: LatencyBreakdown) -> dict:
+    """Convert a pipecat LatencyBreakdown into a JSON-friendly turn record.
+
+    Captures wall-clock timing and the STT/LLM/TTS time-to-first-byte split for
+    one user→bot cycle (or the opening greeting, where there is no user turn).
+    """
+    now = datetime.now(CLINIC_TZ)
+
+    user_at = None
+    response_secs = None
+    if breakdown.user_turn_start_time is not None:
+        user_at = datetime.fromtimestamp(breakdown.user_turn_start_time, CLINIC_TZ).isoformat()
+        response_secs = round(now.timestamp() - breakdown.user_turn_start_time, 3)
+
+    # Map each per-processor TTFB to a stt/llm/tts bucket (first value wins).
+    # Match the acronym + "SERVICE": a bare "STT"/"TTS" substring check is
+    # ambiguous because "ElevenLabsTTSService" contains "STT" (…ab*STT*s) and
+    # vice-versa, but only "STTSERVICE"/"TTSSERVICE" are unique to each.
+    ttfb: dict[str, float] = {}
+    for t in breakdown.ttfb:
+        name = t.processor.upper()
+        for key in ("STT", "LLM", "TTS"):
+            if f"{key}SERVICE" in name and key.lower() not in ttfb:
+                ttfb[key.lower()] = round(t.duration_secs, 3)
+                break
+
+    return {
+        "user_at": user_at,
+        "bot_at": now.isoformat(),
+        "response_secs": response_secs,
+        "ttfb": ttfb,
+        "user_turn_secs": round(breakdown.user_turn_secs, 3)
+        if breakdown.user_turn_secs is not None
+        else None,
+        "function_calls": [
+            {"name": fc.function_name, "secs": round(fc.duration_secs, 3)}
+            for fc in breakdown.function_calls
+        ],
+    }
+
+
+def _dump_transcript(
+    session_id: str,
+    context: LLMContext,
+    turns: list[dict],
+    started_at: datetime,
+) -> None:
+    """Persist the conversation + timing/latency timeline to logs/transcripts/.
+
+    Best-effort: a failure here must never break session teardown.
+    """
+    try:
+        messages = context.get_messages(truncate_large_values=True)
+        payload = {
+            "session_id": session_id,
+            "started_at": started_at.isoformat(),
+            "ended_at": datetime.now(CLINIC_TZ).isoformat(),
+            "messages": messages,
+            "turns": turns,
+        }
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = Path(settings.log_file).parent / "transcripts" / f"{ts}_{session_id}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        logger.info(
+            "Transcript saved to {} ({} messages, {} turns)", path, len(messages), len(turns)
+        )
+    except Exception:
+        logger.exception("Failed to dump transcript")
 
 
 class AudioLevelLogger(FrameProcessor):
@@ -76,8 +158,8 @@ class AudioLevelLogger(FrameProcessor):
                 self._byte_count += len(audio)
             now = time.monotonic()
             if now - self._last_log >= 1.0:
-                logger.info(
-                    "AUDIO IN: frames=%d bytes=%d max_rms=%.1f max_peak=%d sr=%d",
+                logger.debug(
+                    "AUDIO IN: frames={} bytes={} max_rms={:.1f} max_peak={} sr={}",
                     self._frame_count,
                     self._byte_count,
                     self._max_rms,
@@ -93,8 +175,16 @@ class AudioLevelLogger(FrameProcessor):
 
 
 async def run_bot(webrtc_connection) -> None:
-    """Run one voice session against the given SmallWebRTCConnection."""
+    """Run one voice session, tagging every log line with its session id."""
+    session_id = _short_id(getattr(webrtc_connection, "pc_id", None))
+    # contextualize sets a contextvar that propagates into the pipeline's child
+    # tasks, so pipecat's own loguru output is tagged with this session too.
+    with logger.contextualize(session_id=session_id):
+        await _run_session(webrtc_connection, session_id)
 
+
+async def _run_session(webrtc_connection, session_id: str) -> None:
+    """Build and run the pipeline for one connection."""
     async with aiohttp.ClientSession() as session:
         vad = SileroVADAnalyzer(
             params=VADParams(
@@ -170,19 +260,29 @@ async def run_bot(webrtc_connection) -> None:
         ]
         pipeline = Pipeline(processors)
 
+        # Pipecat's built-in observers give per-turn transcript, LLM activity and
+        # metrics. They're verbose, so they're only attached on LOG_LEVEL=DEBUG;
+        # a normal INFO run shows just key events (connect, booking, errors).
         observers = []
         if settings.debug:
-            observers.append(
-                DebugLogObserver(
-                    frame_types=(
-                        VADUserStartedSpeakingFrame,
-                        VADUserStoppedSpeakingFrame,
-                        UserStartedSpeakingFrame,
-                        UserStoppedSpeakingFrame,
-                        TranscriptionFrame,
-                    )
-                )
-            )
+            observers += [
+                TranscriptionLogObserver(),
+                LLMLogObserver(),
+                MetricsLogObserver(),
+            ]
+
+        # Per-turn timing + STT/LLM/TTS latency for the transcript. The observer
+        # is silent (emits events only), so it's safe to attach at any log level.
+        started_at = datetime.now(CLINIC_TZ)
+        turns: list[dict] = []
+        if settings.transcript_log:
+            latency_observer = UserBotLatencyObserver()
+
+            @latency_observer.event_handler("on_latency_breakdown")
+            async def _on_breakdown(_obs, breakdown: LatencyBreakdown):
+                turns.append(_format_turn(breakdown))
+
+            observers.append(latency_observer)
 
         task = PipelineTask(
             pipeline,
@@ -204,4 +304,8 @@ async def run_bot(webrtc_connection) -> None:
             await task.cancel()
 
         runner = PipelineRunner(handle_sigint=False)
-        await runner.run(task)
+        try:
+            await runner.run(task)
+        finally:
+            if settings.transcript_log:
+                _dump_transcript(session_id, context, turns, started_at)

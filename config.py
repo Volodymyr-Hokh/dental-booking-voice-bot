@@ -36,7 +36,14 @@ class Settings(BaseSettings):
     # ── Server ───────────────────────────────────────────────────────────────
     host: str = "0.0.0.0"
     port: int = 7860
+
+    # ── Logging ──────────────────────────────────────────────────────────────
     log_level: str = "INFO"
+    log_file: str = "logs/bot.log"
+    log_rotation: str = "10 MB"
+    log_retention: str = "7 days"
+    # Dump the full conversation context to logs/transcripts/ when a call ends.
+    transcript_log: bool = True
 
     @property
     def debug(self) -> bool:
