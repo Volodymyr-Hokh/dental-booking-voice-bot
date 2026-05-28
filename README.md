@@ -24,6 +24,7 @@ GOOGLE_CALENDAR_ID=primary                  # or a specific calendar ID
 GOOGLE_SERVICE_ACCOUNT_JSON=credentials/service_account.json
 HOST=0.0.0.0
 PORT=7860
+LOG_LEVEL=INFO                              # set to DEBUG for verbose audio/VAD diagnostics
 ```
 
 ### 2. Set up Google Calendar
@@ -106,6 +107,8 @@ Open <http://localhost:7860>.
 | [clinic_info.py](clinic_info.py) | Hardcoded clinic data — **edit this** for a real clinic |
 | [calendar_service.py](calendar_service.py) | Google Calendar wrapper |
 | [tools.py](tools.py) | LLM function-call schemas and handlers |
+| [config.py](config.py) | Central settings (pydantic `BaseSettings`) loaded from env / `.env` |
+| [test_calendar.py](test_calendar.py) | Standalone diagnostic for Calendar read/write access |
 | [static/](static/) | Browser test page (vanilla WebRTC) |
 | [Dockerfile](Dockerfile) | Container image |
 | [docker-compose.yml](docker-compose.yml) | `host` and `ports` profiles |
@@ -114,7 +117,8 @@ Open <http://localhost:7860>.
 
 - **Voice**: change `ELEVENLABS_VOICE_ID` (browse at <https://elevenlabs.io/voice-library>).
 - **Working hours / services / prices**: edit constants in [clinic_info.py](clinic_info.py).
-- **Slot length**: `SLOT_MINUTES` in [clinic_info.py](clinic_info.py) (currently fixed at 30 across the codebase).
+- **Slot length**: `SLOT_MINUTES` in [clinic_info.py](clinic_info.py) — the single source of truth. Availability, booking duration, and the spoken/tool wording all derive from it.
+- **Diagnostics**: set `LOG_LEVEL=DEBUG` to enable per-frame audio-level logging and VAD/transcription frame tracing (off by default to keep demo logs clean).
 - **Timezone**: currently `Europe/Kyiv`. All working hours, availability, and bookings are interpreted in this zone (DST handled automatically via `zoneinfo`). To switch, update `TIMEZONE` / `TIMEZONE_LABEL` in [clinic_info.py](clinic_info.py); everything else reads from `CLINIC_TZ`.
 
 ## Next steps (not in this version)

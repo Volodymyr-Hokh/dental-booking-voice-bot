@@ -6,17 +6,13 @@ Run inside Docker:
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 
-from dotenv import load_dotenv
-
 from clinic_info import CLINIC_TZ
+from config import settings
 
-load_dotenv()
-
-calendar_id = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
-sa_path = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "credentials/service_account.json")
+calendar_id = settings.google_calendar_id
+sa_path = settings.google_service_account_json
 
 print(f"Calendar ID : {calendar_id}")
 print(f"Service acct: {sa_path}")
@@ -32,9 +28,9 @@ except Exception as e:
     raise SystemExit(1)
 
 # ── 1. Free/busy read ────────────────────────────────────────────────────────
-from datetime import date  # noqa: E402
+from datetime import date, timedelta  # noqa: E402
 
-tomorrow = date.today().replace(day=date.today().day + 1)
+tomorrow = date.today() + timedelta(days=1)
 try:
     slots = svc.find_free_slots(tomorrow)
     print(f"✅  find_free_slots for {tomorrow}: {[s.strftime('%H:%M') for s in slots[:3]]} ...")

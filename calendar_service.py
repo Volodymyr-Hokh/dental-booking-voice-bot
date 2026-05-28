@@ -75,6 +75,22 @@ class CalendarService:
             slot = slot_end
         return free
 
+    def validate_slot(self, start_dt: datetime, duration_min: int) -> str | None:
+        """Return a human-readable reason the slot is invalid, or None if OK.
+
+        Guards against booking in the past, on a closed day, or outside the
+        clinic's working hours — `is_slot_free` only checks calendar conflicts.
+        """
+        if start_dt < datetime.now(CLINIC_TZ):
+            return "That time is in the past."
+        window = self._working_window(start_dt.date())
+        if window is None:
+            return "The clinic is closed that day."
+        open_dt, close_dt = window
+        if start_dt < open_dt or start_dt + timedelta(minutes=duration_min) > close_dt:
+            return "That time is outside the clinic's working hours."
+        return None
+
     def is_slot_free(self, start_dt: datetime, duration_min: int) -> bool:
         end_dt = start_dt + timedelta(minutes=duration_min)
         body = {

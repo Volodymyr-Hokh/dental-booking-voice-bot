@@ -3,22 +3,20 @@
 from __future__ import annotations
 
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
+from config import STUN_SERVER, settings
 from bot import run_bot
 
-load_dotenv()
-
 logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO"),
+    level=settings.log_level,
     format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
@@ -48,19 +46,30 @@ async def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/api/config")
+async def client_config():
+    """Runtime config for the browser client (keeps the STUN server single-sourced)."""
+    return {"stun_server": STUN_SERVER}
+
+
+class OfferRequest(BaseModel):
+    sdp: str
+    type: str
+    pc_id: str | None = None
+    restart_pc: bool = False
+
+
 @app.post("/api/offer")
-async def offer(payload: dict, background_tasks: BackgroundTasks):
-    pc_id = payload.get("pc_id")
-    sdp = payload["sdp"]
-    sdp_type = payload["type"]
+async def offer(payload: OfferRequest, background_tasks: BackgroundTasks):
+    pc_id = payload.pc_id
 
     if pc_id and pc_id in _connections:
         conn = _connections[pc_id]
         logger.info("Renegotiating connection %s", pc_id)
-        await conn.renegotiate(sdp=sdp, type=sdp_type, restart_pc=payload.get("restart_pc", False))
+        await conn.renegotiate(sdp=payload.sdp, type=payload.type, restart_pc=payload.restart_pc)
     else:
-        conn = SmallWebRTCConnection(ice_servers=["stun:stun.l.google.com:19302"])
-        await conn.initialize(sdp=sdp, type=sdp_type)
+        conn = SmallWebRTCConnection(ice_servers=[STUN_SERVER])
+        await conn.initialize(sdp=payload.sdp, type=payload.type)
 
         @conn.event_handler("closed")
         async def _closed(c: SmallWebRTCConnection):
@@ -75,6 +84,4 @@ async def offer(payload: dict, background_tasks: BackgroundTasks):
 
 
 if __name__ == "__main__":
-    host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "7860"))
-    uvicorn.run("main:app", host=host, port=port, reload=False)
+    uvicorn.run("main:app", host=settings.host, port=settings.port, reload=False)

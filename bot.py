@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import struct
 import time
 
@@ -40,6 +39,7 @@ from pipecat.turns.user_stop import SpeechTimeoutUserTurnStopStrategy
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 from calendar_service import CalendarService
+from config import settings
 from prompts import build_system_prompt
 from tools import TOOLS_SCHEMA, make_handlers
 
@@ -114,27 +114,25 @@ async def run_bot(webrtc_connection) -> None:
         )
 
         stt = ElevenLabsSTTService(
-            api_key=os.environ["ELEVENLABS_API_KEY"],
+            api_key=settings.elevenlabs_api_key,
             aiohttp_session=session,
         )
         tts = ElevenLabsTTSService(
-            api_key=os.environ["ELEVENLABS_API_KEY"],
+            api_key=settings.elevenlabs_api_key,
             settings=ElevenLabsTTSService.Settings(
-                voice=os.environ.get("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
+                voice=settings.elevenlabs_voice_id,
             ),
         )
         llm = OpenAILLMService(
-            api_key=os.environ["OPENAI_API_KEY"],
+            api_key=settings.openai_api_key,
             settings=OpenAILLMService.Settings(
-                model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                model=settings.openai_model,
             ),
         )
 
         calendar = CalendarService(
-            calendar_id=os.environ.get("GOOGLE_CALENDAR_ID", "primary"),
-            service_account_path=os.environ.get(
-                "GOOGLE_SERVICE_ACCOUNT_JSON", "credentials/service_account.json"
-            ),
+            calendar_id=settings.google_calendar_id,
+            service_account_path=settings.google_service_account_json,
         )
 
         handlers = make_handlers(calendar)
@@ -155,9 +153,13 @@ async def run_bot(webrtc_connection) -> None:
         )
         context_aggregator = LLMContextAggregatorPair(context, user_params=user_params)
 
-        pipeline = Pipeline([
-            transport.input(),
-            AudioLevelLogger(),
+        # Diagnostics (per-frame audio levels + VAD/transcription frame logging)
+        # are only wired in when LOG_LEVEL=DEBUG, so a normal demo run keeps
+        # clean logs and skips the per-frame Python audio analysis on the hot path.
+        processors = [transport.input()]
+        if settings.debug:
+            processors.append(AudioLevelLogger())
+        processors += [
             VADProcessor(vad_analyzer=vad),
             stt,
             context_aggregator.user(),
@@ -165,15 +167,12 @@ async def run_bot(webrtc_connection) -> None:
             tts,
             transport.output(),
             context_aggregator.assistant(),
-        ])
+        ]
+        pipeline = Pipeline(processors)
 
-        task = PipelineTask(
-            pipeline,
-            params=PipelineParams(
-                allow_interruptions=True,
-                enable_metrics=True,
-            ),
-            observers=[
+        observers = []
+        if settings.debug:
+            observers.append(
                 DebugLogObserver(
                     frame_types=(
                         VADUserStartedSpeakingFrame,
@@ -182,8 +181,16 @@ async def run_bot(webrtc_connection) -> None:
                         UserStoppedSpeakingFrame,
                         TranscriptionFrame,
                     )
-                ),
-            ],
+                )
+            )
+
+        task = PipelineTask(
+            pipeline,
+            params=PipelineParams(
+                allow_interruptions=True,
+                enable_metrics=True,
+            ),
+            observers=observers,
         )
 
         @transport.event_handler("on_client_connected")

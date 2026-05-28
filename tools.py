@@ -23,7 +23,7 @@ MAX_SLOTS_RETURNED = 6
 CHECK_AVAILABILITY_SCHEMA = FunctionSchema(
     name="check_availability",
     description=(
-        "Check available 30-minute appointment slots for a given date. "
+        f"Check available {clinic_info.SLOT_MINUTES}-minute appointment slots for a given date. "
         "Use this whenever the caller asks about openings or proposes a time."
     ),
     properties={
@@ -155,6 +155,11 @@ def make_handlers(calendar: CalendarService) -> dict:
 
         start_dt = datetime.combine(d, t, tzinfo=CLINIC_TZ)
         duration = clinic_info.SLOT_MINUTES
+
+        invalid_reason = calendar.validate_slot(start_dt, duration)
+        if invalid_reason is not None:
+            await params.result_callback({"status": "rejected", "message": invalid_reason})
+            return
 
         await params.llm.push_frame(
             TTSSpeakFrame("Great, booking that now — just a second.", append_to_context=False)

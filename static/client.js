@@ -5,7 +5,6 @@ const connectBtn = document.getElementById("btn-connect");
 const disconnectBtn = document.getElementById("btn-disconnect");
 const playBtn = document.getElementById("btn-play");
 const statusEl = document.getElementById("status");
-const diagEl = document.getElementById("diag");
 const remoteAudio = document.getElementById("remote-audio");
 const levelBar = document.getElementById("level-bar");
 
@@ -14,16 +13,26 @@ let pcId = null;
 let micStream = null;
 let audioCtx = null;
 let levelRafId = null;
-let statsTimer = null;
-let lastBytesReceived = 0;
 
 function setStatus(text, className = "") {
   statusEl.textContent = text;
   statusEl.className = "status" + (className ? " " + className : "");
 }
 
-function setDiag(text) {
-  if (diagEl) diagEl.textContent = text;
+// STUN server comes from the server (/api/config) so it stays single-sourced;
+// fall back to Google's public STUN if the config call fails.
+const DEFAULT_STUN = "stun:stun.l.google.com:19302";
+async function getStunServer() {
+  try {
+    const res = await fetch("/api/config");
+    if (res.ok) {
+      const cfg = await res.json();
+      if (cfg.stun_server) return cfg.stun_server;
+    }
+  } catch (e) {
+    /* fall through to default */
+  }
+  return DEFAULT_STUN;
 }
 
 async function connect() {
@@ -47,9 +56,7 @@ async function connect() {
 
   startLevelMeter(micStream);
 
-  pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-  });
+  pc = new RTCPeerConnection({ iceServers: [{ urls: await getStunServer() }] });
 
   // Pipecat sends transcriptions/metrics over a data channel. The server
   // never creates one itself, so the client must.
@@ -60,32 +67,23 @@ async function connect() {
   micStream.getAudioTracks().forEach((t) => pc.addTrack(t, micStream));
 
   pc.ontrack = (e) => {
-    console.log("ontrack", e.track.kind, "streams:", e.streams.length,
-      "muted:", e.track.muted, "readyState:", e.track.readyState);
     if (e.track.kind !== "audio") return;
 
     // Prefer the stream the peer attached the track to; fall back to wrapping.
     if (e.streams && e.streams[0]) {
       remoteAudio.srcObject = e.streams[0];
     } else {
-      const s = new MediaStream([e.track]);
-      remoteAudio.srcObject = s;
+      remoteAudio.srcObject = new MediaStream([e.track]);
     }
     remoteAudio.volume = 1.0;
     remoteAudio.muted = false;
 
-    e.track.onmute = () => console.log("remote track muted");
-    e.track.onunmute = () => console.log("remote track unmuted");
-    e.track.onended = () => console.log("remote track ended");
-
     tryPlay();
-    startStatsPolling();
   };
 
   pc.onconnectionstatechange = () => {
     if (!pc) return;
     const s = pc.connectionState;
-    console.log("connectionState:", s);
     if (s === "connected") setStatus("connected — speak now", "connected");
     else if (s === "connecting") setStatus("connecting…", "connecting");
     else if (s === "failed") {
@@ -95,10 +93,6 @@ async function connect() {
       setStatus("disconnected");
       cleanup();
     }
-  };
-
-  pc.oniceconnectionstatechange = () => {
-    console.log("iceConnectionState:", pc && pc.iceConnectionState);
   };
 
   setStatus("creating offer…", "connecting");
@@ -122,7 +116,6 @@ async function connect() {
     if (!res.ok) throw new Error(`signaling failed: ${res.status}`);
     answer = await res.json();
   } catch (e) {
-    console.error(e);
     setStatus("signaling failed", "error");
     cleanup();
     return;
@@ -137,43 +130,11 @@ async function connect() {
 function tryPlay() {
   const p = remoteAudio.play();
   if (p && typeof p.catch === "function") {
-    p.catch((err) => {
-      console.warn("remoteAudio.play() failed:", err && err.name, err && err.message);
+    p.catch(() => {
       // Autoplay blocked — surface a manual play button.
       if (playBtn) playBtn.hidden = false;
     });
   }
-}
-
-function startStatsPolling() {
-  if (statsTimer) return;
-  lastBytesReceived = 0;
-  statsTimer = setInterval(async () => {
-    if (!pc) return;
-    const stats = await pc.getStats();
-    let inbound = null;
-    let outbound = null;
-    let candidatePair = null;
-    stats.forEach((r) => {
-      if (r.type === "inbound-rtp" && r.kind === "audio") inbound = r;
-      if (r.type === "outbound-rtp" && r.kind === "audio") outbound = r;
-      if (r.type === "candidate-pair" && r.nominated && r.state === "succeeded") {
-        candidatePair = r;
-      }
-    });
-    const inBytes = inbound ? inbound.bytesReceived : 0;
-    const inPackets = inbound ? inbound.packetsReceived : 0;
-    const inLost = inbound ? inbound.packetsLost : 0;
-    const outBytes = outbound ? outbound.bytesSent : 0;
-    const outPackets = outbound ? outbound.packetsSent : 0;
-    const deltaIn = inBytes - lastBytesReceived;
-    lastBytesReceived = inBytes;
-    let line = `recv ${inBytes}B (${inPackets} pkts, lost ${inLost}, +${deltaIn}/s) | sent ${outBytes}B (${outPackets} pkts)`;
-    if (candidatePair) {
-      line += ` | rtt=${(candidatePair.currentRoundTripTime || 0).toFixed(3)}s`;
-    }
-    setDiag(line);
-  }, 1000);
 }
 
 function waitForIceGatheringComplete(pc) {
@@ -216,10 +177,6 @@ function startLevelMeter(stream) {
 }
 
 function cleanup() {
-  if (statsTimer) {
-    clearInterval(statsTimer);
-    statsTimer = null;
-  }
   if (pc) {
     pc.getSenders().forEach((s) => s.track && s.track.stop());
     pc.close();
@@ -239,7 +196,6 @@ function cleanup() {
   }
   levelBar.style.width = "0";
   pcId = null;
-  setDiag("");
   if (playBtn) playBtn.hidden = true;
   connectBtn.disabled = false;
   disconnectBtn.disabled = true;
