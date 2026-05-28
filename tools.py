@@ -125,7 +125,7 @@ def make_handlers(calendar: CalendarService) -> dict:
 
         if not slots:
             await params.result_callback(
-                {"date": d.isoformat(), "free_slots": [], "note": "No free slots — clinic closed or fully booked."}
+                {"date": d.isoformat(), "weekday": d.strftime("%A"), "free_slots": [], "note": "No free slots — clinic closed or fully booked."}
             )
             return
 
@@ -137,7 +137,7 @@ def make_handlers(calendar: CalendarService) -> dict:
 
         formatted = [s.strftime("%H:%M") for s in slots[:MAX_SLOTS_RETURNED]]
         await params.result_callback(
-            {"date": d.isoformat(), "timezone": TIMEZONE, "free_slots": formatted}
+            {"date": d.isoformat(), "weekday": d.strftime("%A"), "timezone": TIMEZONE, "free_slots": formatted}
         )
 
     async def book_appointment(params: FunctionCallParams) -> None:
@@ -190,6 +190,7 @@ def make_handlers(calendar: CalendarService) -> dict:
         await params.result_callback({
             "status": "booked",
             "confirmation_id": created["event_id"],
+            "weekday": d.strftime("%A"),
             "start": created["start"],
             "end": created["end"],
             "patient_name": name,

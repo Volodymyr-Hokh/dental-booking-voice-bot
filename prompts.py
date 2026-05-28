@@ -7,6 +7,7 @@ from clinic_info import (
     CLINIC_TZ,
     PHONE_DISPLAY,
     TIMEZONE_LABEL,
+    format_date_reference,
     format_hours_for_prompt,
     format_services_for_prompt,
 )
@@ -63,6 +64,9 @@ Services:
 
 Begin every call with a warm greeting that includes the clinic name and asks how you can help.
 
-# Current date
-Today is {today}.
+# Date reference ({TIMEZONE_LABEL})
+Today is {today}. When the caller names a weekday or a relative day, look up the
+exact YYYY-MM-DD below — do not calculate it yourself. Always use the NEXT
+matching date that is today or later.
+{format_date_reference()}
 """

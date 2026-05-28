@@ -1,6 +1,6 @@
 """Placeholder clinic data — edit these constants to match a real clinic."""
 
-from datetime import time
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 CLINIC_NAME = "Bright Smile Dental"
@@ -75,6 +75,24 @@ def format_hours_for_prompt() -> str:
             lines.append(f"- {d}: {start.strftime('%H:%M')}–{end.strftime('%H:%M')} {TIMEZONE_LABEL}")
         else:
             lines.append(f"- {d}: closed")
+    return "\n".join(lines)
+
+
+def format_date_reference(days: int = 14) -> str:
+    """Upcoming dates with weekday + open/closed status.
+
+    Lets the model map weekday names ("Monday") and relative days ("tomorrow")
+    to an exact YYYY-MM-DD by lookup instead of doing weekday arithmetic, which
+    small models get wrong.
+    """
+    today = datetime.now(CLINIC_TZ).date()
+    lines = []
+    for i in range(days):
+        d = today + timedelta(days=i)
+        status = "open" if d.weekday() in WORKING_HOURS else "closed"
+        label = "today" if i == 0 else ("tomorrow" if i == 1 else "")
+        suffix = f" ({label})" if label else ""
+        lines.append(f"- {d.isoformat()} {d.strftime('%A')} — {status}{suffix}")
     return "\n".join(lines)
 
 
