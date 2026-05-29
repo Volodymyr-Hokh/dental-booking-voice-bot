@@ -34,6 +34,19 @@ FILE_FORMAT = (
 # stdlib loggers that install their own handlers and so need explicit rerouting.
 _STDLIB_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "aiohttp.access")
 
+# Third-party loggers that flood the stream — aioice emits one INFO line per ICE
+# candidate pair (hundreds per connection), and the WebRTC / low-level HTTP /
+# websocket stack becomes overwhelming at DEBUG. Clamp them to WARNING at the
+# source so they never bury the app's own logs, regardless of LOG_LEVEL.
+_NOISY_LOGGERS = (
+    "aioice",
+    "aiortc",
+    "websockets",
+    "httpcore",
+    "urllib3",
+    "googleapiclient",
+)
+
 
 class InterceptHandler(logging.Handler):
     """Redirect stdlib `logging` records into loguru (the canonical recipe)."""
@@ -84,3 +97,7 @@ def setup_logging() -> None:
         std_logger = logging.getLogger(name)
         std_logger.handlers = [InterceptHandler()]
         std_logger.propagate = False
+
+    # Silence the flood-prone libraries even when the app runs at DEBUG.
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)

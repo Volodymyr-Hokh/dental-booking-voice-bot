@@ -7,7 +7,6 @@ from datetime import date, datetime, time
 from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
-from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.services.llm_service import FunctionCallParams
 
 import clinic_info
@@ -30,7 +29,10 @@ CHECK_AVAILABILITY_SCHEMA = FunctionSchema(
             "description": "Date in YYYY-MM-DD format (Kyiv time).",
         },
         "preferred_time": {
-            "type": "string",
+            # Nullable: Groq strictly validates generated tool calls, and models
+            # (e.g. gpt-oss) emit `null` for this optional field. A bare "string"
+            # type rejects null → the LLM call errors and the bot goes silent.
+            "type": ["string", "null"],
             "description": (
                 "Optional preferred time HH:MM (24-hour, Kyiv time). "
                 "If provided, results are sorted by proximity to this time."
@@ -112,10 +114,6 @@ def make_handlers(calendar: CalendarService) -> dict:
 
         logger.debug("check_availability date={} preferred_time={}", args.get("date"), args.get("preferred_time"))
 
-        await params.llm.push_frame(
-            TTSSpeakFrame("One moment — let me check what's open on that day.", append_to_context=False)
-        )
-
         try:
             slots = calendar.find_free_slots(d)
         except Exception as e:
@@ -161,10 +159,6 @@ def make_handlers(calendar: CalendarService) -> dict:
             await params.result_callback({"status": "rejected", "message": invalid_reason})
             return
 
-        await params.llm.push_frame(
-            TTSSpeakFrame("Great, booking that now — just a second.", append_to_context=False)
-        )
-
         try:
             if not calendar.is_slot_free(start_dt, duration):
                 # Offer alternatives the same day.
@@ -198,9 +192,6 @@ def make_handlers(calendar: CalendarService) -> dict:
         })
 
     async def get_clinic_info(params: FunctionCallParams) -> None:
-        await params.llm.push_frame(
-            TTSSpeakFrame("Let me look that up for you.", append_to_context=False)
-        )
         topic = (params.arguments.get("topic") or "general").strip()
         await params.result_callback({"topic": topic, "info": clinic_info.get_info(topic)})
 

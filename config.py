@@ -25,9 +25,13 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str
     elevenlabs_voice_id: str = DEFAULT_VOICE_ID
 
-    # ── OpenAI ───────────────────────────────────────────────────────────────
-    openai_api_key: str
-    openai_model: str = "gpt-4o-mini"
+    # ── Groq ─────────────────────────────────────────────────────────────────
+    groq_api_key: str
+    # llama-3.3-70b-versatile: clean conversational output + reliable tool calls.
+    # (Avoid gpt-oss models here: their harmony/reasoning channel leaks into the
+    # spoken text — stray "..." tokens, stage directions, hallucinated bookings.)
+    # Rare Groq tool_use_failed is backstopped by LLMErrorFallback in bot.py.
+    groq_model: str = "llama-3.3-70b-versatile"
 
     # ── Google Calendar ──────────────────────────────────────────────────────
     google_calendar_id: str = "primary"

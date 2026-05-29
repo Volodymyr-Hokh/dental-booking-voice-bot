@@ -1,6 +1,6 @@
 # Dental Booking Voice Bot
 
-AI voice receptionist for a dental clinic, built on **Pipecat** + **ElevenLabs** (STT & TTS) + **OpenAI** (LLM) + **Google Calendar**. Includes a tiny browser test page so you can talk to the bot through your mic.
+AI voice receptionist for a dental clinic, built on **Pipecat** + **ElevenLabs** (STT & TTS) + **Groq** (LLM) + **Google Calendar**. Includes a tiny browser test page so you can talk to the bot through your mic.
 
 ## What it does
 
@@ -18,8 +18,8 @@ Phone integration (Twilio) is **not** wired up yet — for now the bot is reacha
 ```
 ELEVENLABS_API_KEY=...
 ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM   # Rachel by default
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-4o-mini                    # optional, this is the default
+GROQ_API_KEY=...
+GROQ_MODEL=llama-3.3-70b-versatile          # optional, this is the default
 GOOGLE_CALENDAR_ID=primary                  # or a specific calendar ID
 GOOGLE_SERVICE_ACCOUNT_JSON=credentials/service_account.json
 HOST=0.0.0.0
